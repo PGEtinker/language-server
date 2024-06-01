@@ -1,0 +1,5 @@
+compile_commands.json
+node_modules
+dist
+Dockerfile
+include
