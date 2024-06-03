@@ -192,10 +192,11 @@ const runLanguageServer = (
     let compileCommandsTemplate: string = readFileSync(path.join(process.cwd(), "compile_commands.template"), "utf-8");
     writeFileSync(path.join(process.cwd(), "compile_commands.json"), compileCommandsTemplate.replace("{{cwd}}", process.cwd()))
     
-    process.on('uncaughtException', err => {
-        console.error('Uncaught Exception: ', err.toString());
-        if (err.stack) {
-            console.error(err.stack);
+    process.on('uncaughtException', (error) =>
+    {
+        console.error('Uncaught Exception: ', error.toString());
+        if (error.stack) {
+            console.error(error.stack);
         }
     });
 
@@ -207,9 +208,12 @@ const runLanguageServer = (
     const wss = new WebSocketServer(languageServerRunConfig.wsServerOptions);
     
     // keep the connections alive with a simple ping every 30 seconds
-    setInterval(() => {
-        wss.clients.forEach((ws) => {
-            if (ws.OPEN) {
+    const pingInterval = setInterval(() =>
+    {
+        wss.clients.forEach((ws) =>
+        {
+            if (ws.OPEN)
+            {
                 ws.ping();
             }
         });
@@ -220,6 +224,19 @@ const runLanguageServer = (
         server: httpServer,
         wss
     });
+
+    process.on("SIGINT", () =>
+    {
+        clearInterval(pingInterval);
+        wss.clients.forEach((ws) =>
+        {
+            ws.close();
+        });
+        wss.close();
+
+        process.exit();
+    });
+    
 };
 
 runLanguageServer({
