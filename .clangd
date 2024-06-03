@@ -1,0 +1,9 @@
+InlayHints:
+    BlockEnd: No
+    Designators: No
+    Enabled: No
+    ParameterNames: No
+    DeducedTypes: No
+    TypeNameLimit: 24
+Completion:
+    AllScopes: false
