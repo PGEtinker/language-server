@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "MODE=development node --watch --loader ts-node/esm server.ts",
+    "dev": "MODE=development node --loader ts-node/esm --watch server.ts",
     "build": "tsc",
     "start": "node dist/server.js"
   },
