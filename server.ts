@@ -80,7 +80,7 @@ const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSo
     // start the language server as an external process
     const socketConnection = createConnection(reader, writer, () => socket.dispose());
     const serverConnection = createServerProcess(serverName, runCommand, runCommandArgs, spawnOptions);
-    
+
     if (serverConnection)
     {
         forward(socketConnection, serverConnection, message =>
@@ -204,18 +204,6 @@ const runLanguageServer = (
     const httpServer: Server = app.listen(languageServerRunConfig.serverPort);
     const wss = new WebSocketServer(languageServerRunConfig.wsServerOptions);
     
-    // keep the connections alive with a simple ping every 30 seconds
-    const pingInterval = setInterval(() =>
-    {
-        wss.clients.forEach((ws) =>
-        {
-            if (ws.OPEN)
-            {
-                ws.ping();
-            }
-        });
-    }, 30000);
-
     // create the web socket
     upgradeWsServer(languageServerRunConfig, {
         server: httpServer,
@@ -224,7 +212,6 @@ const runLanguageServer = (
 
     process.on("SIGINT", () =>
     {
-        clearInterval(pingInterval);
         wss.clients.forEach((ws) =>
         {
             ws.close();
