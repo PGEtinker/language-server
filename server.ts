@@ -243,6 +243,7 @@ runLanguageServer({
     runCommand: "clangd",
     runCommandArgs: [
         `--compile-commands-dir=${process.cwd()}`,
+        `--header-insertion=never`,
     ],
     wsServerOptions: {
         noServer: true,
