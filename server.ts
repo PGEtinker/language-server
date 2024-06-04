@@ -243,10 +243,6 @@ runLanguageServer({
     runCommand: "clangd",
     runCommandArgs: [
         `--compile-commands-dir=${process.cwd()}`,
-        '--background-index=false',
-        '--all-scopes-completion=false',
-        '--function-arg-placeholders=true',
-        '--completion-style=bundled',
     ],
     wsServerOptions: {
         noServer: true,
