@@ -149,6 +149,9 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
         {
             config.wss.handleUpgrade(request, socket, head, webSocket =>
             {
+                
+                let keepAliveInterval: NodeJS.Timeout;
+                
                 const socket: IWebSocket = {
                     send: content => webSocket.send(content, error => {
                         if (error) {
@@ -161,9 +164,13 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
                     }),
                     onError: cb => webSocket.on('error', cb),
                     onClose: cb => webSocket.on('close', cb),
-                    dispose: () => webSocket.close()
+                    dispose: () =>
+                    {
+                        clearInterval(keepAliveInterval);
+                        webSocket.close();
+                    }
                 };
-                
+
                 // launch the server when the web socket is opened
                 if (webSocket.readyState === webSocket.OPEN)
                 {
@@ -176,6 +183,14 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
                         launchLanguageServer(runconfig, socket);
                     });
                 }
+
+                keepAliveInterval = setInterval(() =>
+                {
+                    webSocket.send(JSON.stringify({
+                        jsonrpc: "2.0",
+                        method: "telemetry/event", "message":"Number Five Alive"
+                    }));
+                }, 30000);
             });
         }
     });
