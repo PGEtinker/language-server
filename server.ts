@@ -156,10 +156,7 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
                         }
                     }),
                     onMessage: cb => webSocket.on('message', (data) => {
-                        if(isDevelopment())
-                        {
-                            console.log(data.toString());
-                        }
+                        log(data.toString());
                         cb(data);
                     }),
                     onError: cb => webSocket.on('error', cb),
