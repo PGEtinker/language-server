@@ -84,7 +84,7 @@ const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSo
 
     if (serverConnection)
     {
-        forward(socketConnection, serverConnection, message =>
+        forward(socketConnection, serverConnection, (message: Message) =>
         {
             if (Message.isRequest(message))
             {
