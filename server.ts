@@ -188,7 +188,10 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
                 {
                     webSocket.send(JSON.stringify({
                         jsonrpc: "2.0",
-                        method: "telemetry/event", "message":"Number Five Alive"
+                        method: "telemetry/event", 
+                        params: {
+                            message: "Number Five Alive",
+                        },
                     }));
                 }, 30000);
             });
