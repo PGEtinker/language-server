@@ -59,6 +59,7 @@ function filterLink(link: string)
         process.cwd() + "/include/olcPixelGameEngine",
         process.cwd() + "/include/olcSoundWaveEngine",
         process.cwd() + "/include",
+        process.cwd(),
     ].forEach((value) =>
     {
         link = link.replace(value, "/***");
