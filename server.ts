@@ -228,6 +228,19 @@ const runLanguageServer = (
         wss
     });
 
+    app.get("/trigger-close-clients", (_, response) =>
+    {
+        wss.clients.forEach((ws) =>
+        {
+            if(ws.OPEN)
+            {
+                ws.close();
+            }
+        });
+        
+        response.json({ message: "clients have been closed." });
+    });
+
     process.on("SIGINT", () =>
     {
         wss.clients.forEach((ws) =>
