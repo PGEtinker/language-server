@@ -97,6 +97,37 @@ const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSo
                     initializeParams.processId = process.pid;
                 }
             }
+            
+            if(Message.isNotification(message))
+            {
+                log(`${serverName} Sending Notification:`);
+                
+                if(message.method === PublishDiagnosticsNotification.method)
+                {
+                    const publishParams = message.params as PublishDiagnosticsParams;
+                    log("-- BEGIN DIAGNOSTICS --");
+                    if(publishParams.diagnostics.length > 0)
+                    {
+                        publishParams.uri = filterLink(publishParams.uri);
+                        log(publishParams.uri);
+
+                        publishParams.diagnostics.forEach((diagnostic: Diagnostic) =>
+                        {
+                            log(diagnostic);
+
+                            if(diagnostic?.relatedInformation && diagnostic.relatedInformation.length > 0)
+                            {
+                                diagnostic.relatedInformation.forEach((relatedInformation: DiagnosticRelatedInformation) =>
+                                {
+                                    relatedInformation.location.uri = filterLink(relatedInformation.location.uri)
+                                })
+                                
+                            }
+                        });
+                    }
+                    log("-- END DIAGNOSTICS --");
+                }
+            }
 
             if(Message.isResponse(message))
             {
