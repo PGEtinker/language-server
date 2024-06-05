@@ -5,7 +5,7 @@ import { URL } from 'node:url';
 import { Socket } from 'node:net';
 import { IWebSocket, WebSocketMessageReader, WebSocketMessageWriter } from 'vscode-ws-jsonrpc';
 import { createConnection, createServerProcess, forward } from 'vscode-ws-jsonrpc/server';
-import { Message, InitializeRequest, InitializeParams } from 'vscode-languageserver';
+import { Message, InitializeRequest, InitializeParams, DiagnosticRelatedInformation, Diagnostic, PublishDiagnosticsNotification, PublishDiagnosticsParams } from 'vscode-languageserver';
 import * as cp from 'child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -131,7 +131,6 @@ const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSo
 
             if(Message.isResponse(message))
             {
-
                 if(message.result)
                 {
                     log(`${serverName} Server sent:`);
