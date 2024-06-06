@@ -105,6 +105,7 @@ const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSo
                 if(message.method === PublishDiagnosticsNotification.method)
                 {
                     const publishParams = message.params as PublishDiagnosticsParams;
+                    
                     log("-- BEGIN DIAGNOSTICS --");
                     if(publishParams.diagnostics.length > 0)
                     {
