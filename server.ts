@@ -49,8 +49,6 @@ interface LanguageServerRunConfig {
 
 function log(...args: any[])
 {
-    return;
-
     if(isDevelopment())
     {
         console.log(...args);
