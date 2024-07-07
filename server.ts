@@ -9,6 +9,11 @@ import { Message, InitializeRequest, InitializeParams, DiagnosticRelatedInformat
 import * as cp from 'child_process';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import cookie from "cookie";
+import * as crypto from "node:crypto";
+
+import "dotenv/config";
+
 
 enum RunMode {
     development = "development",
@@ -44,6 +49,8 @@ interface LanguageServerRunConfig {
 
 function log(...args: any[])
 {
+    return;
+
     if(isDevelopment())
     {
         console.log(...args);
@@ -231,6 +238,38 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
     });
 };
 
+function authenticate(request: IncomingMessage): boolean
+{
+    // the basic idea here is if we have a valid session provided via cookie, then
+    // we're going to allow the connection to succeed.
+    try
+    {
+        let cookies = cookie.parse(request.headers["cookie"] as string);
+
+        let appKey  = Buffer.from(process.env.APP_KEY?.replace("base64:", "") as string, 'base64');
+        
+        let session = JSON.parse(Buffer.from(cookies.pgetinker_session, "base64").toString());
+        
+        const decipher = crypto.createDecipheriv(
+            "aes-256-cbc",
+            appKey,
+            Buffer.from(session.iv, 'base64')
+        );
+            
+        let plaintext = decipher.update(session.value, "base64", "utf8");
+        plaintext += decipher.final("utf8");
+        
+        return true;
+    }
+    catch(e)
+    {
+
+    }
+    
+    return false;
+
+}
+
 /** LSP server runner */
 const runLanguageServer = (
     languageServerRunConfig: LanguageServerRunConfig
@@ -299,15 +338,14 @@ runLanguageServer({
         noServer: true,
         perMessageDeflate: false,
         clientTracking: true,
-        verifyClient: (
-            clientInfo: { origin: string; secure: boolean; req: IncomingMessage },
-            callback
-        ) => {
-            const parsedURL = new URL(`${clientInfo.origin}${clientInfo.req?.url ?? ''}`);
-            const authToken = parsedURL.searchParams.get('authorization');
-            if (authToken === 'UserAuth') {
+        verifyClient: (clientInfo: { origin: string; secure: boolean; req: IncomingMessage }, callback) => 
+        {
+            if(authenticate(clientInfo.req))
+            {
                 callback(true);
-            } else {
+            }
+            else
+            {
                 callback(false);
             }
         }
