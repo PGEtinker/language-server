@@ -4,4 +4,5 @@ compile_commands.json
 .cache
 include
 .env
+workspaces
 
