@@ -7,7 +7,7 @@ import { IWebSocket, WebSocketMessageReader, WebSocketMessageWriter } from 'vsco
 import { createConnection, createServerProcess, forward } from 'vscode-ws-jsonrpc/server';
 import { Message, InitializeRequest, InitializeParams, DiagnosticRelatedInformation, Diagnostic, PublishDiagnosticsNotification, PublishDiagnosticsParams } from 'vscode-languageserver';
 import * as cp from 'child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import cookie from "cookie";
 import * as crypto from "node:crypto";
@@ -32,17 +32,10 @@ function isDevelopment() : boolean
     return !isProduction();
 }
 
-enum LanguageName {
-    /** https://clangd.llvm.org/ */
-    clangd = 'clangd',
-}
-
 interface LanguageServerRunConfig {
     serverName: string;
     pathName: string;
     serverPort: number;
-    runCommand: LanguageName | string;
-    runCommandArgs: string[];
     wsServerOptions: ServerOptions,
     spawnOptions?: cp.SpawnOptions;
 }
@@ -59,12 +52,6 @@ function filterLink(link: string)
 {
     [
         "/opt/emsdk/upstream/emscripten/cache/sysroot",
-        process.cwd() + "/include/olcPixelGameEngine/utilites",
-        process.cwd() + "/include/olcPixelGameEngine/extensions",
-        process.cwd() + "/include/olcPixelGameEngine",
-        process.cwd() + "/include/olcSoundWaveEngine",
-        process.cwd() + "/include",
-        process.cwd(),
     ].forEach((value) =>
     {
         link = link.replace(value, "/***");
@@ -76,16 +63,99 @@ function filterLink(link: string)
 /**
  * start the language server inside the current process
  */
-const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSocket) => {
+const launchLanguageServer = (runconfig: LanguageServerRunConfig, socket: IWebSocket, libraries: any) => {
     
-    const { serverName, runCommand, runCommandArgs, spawnOptions } = runconfig;
+    if(!libraries)
+        return;
+
+    /**
+     * Process the libraries and break it out into their version directories
+     */
+    let baseLibraryDirectory = process.env.PGETINKER_LIBS_DIRECTORY || "/opt/PGEtinker-libs";
+
+    baseLibraryDirectory += "/olcPixelGameEngine/" + libraries["olcPixelGameEngine"];
     
+    const libraryDirectories: any = {};
+    libraryDirectories["olcPixelGameEngine"] = baseLibraryDirectory + "/olcPixelGameEngine";
+
+    const libraryKeys = Object.keys(libraries);
+
+    libraryKeys.forEach((library) =>
+    {
+        if(library == "olcPixelGameEngine")
+            return;
+        
+        libraryDirectories[library] = baseLibraryDirectory + "/" + library + "/" + libraries[library];
+    });
+
+    // create a sha256 of the libraryDirectories object
+    const libraryHash = crypto.createHash("sha256");
+    
+    libraryHash.update(JSON.stringify(libraryDirectories));
+    
+    // use the hash to derive a workspace
+    const workspacePath = path.join(process.cwd(), "workspaces", libraryHash.digest("base64url"));
+
+    const { serverName, spawnOptions } = runconfig;
+    const errors: string[] = [];
+
+    let nsJailArgs = [
+        "--config",
+        path.join(process.cwd(), process.env.COMPILER_NSJAIL_CFG || "nsjail-emscripten-ci.cfg"),
+        "-B",
+        `${workspacePath}:/workspace`,
+    ];
+    
+    libraryKeys.forEach((library) =>
+    {
+        if(!existsSync(libraryDirectories[library]))
+        {
+            errors.push(`${libraryDirectories[library]} does not exist.`);
+            return;
+        }
+
+        nsJailArgs.push("-R");
+        nsJailArgs.push(`${libraryDirectories[library]}:/workspace/${library}`);
+    });
+
+    nsJailArgs.push("--");
+    
+    // begin clangd specifics
+    nsJailArgs.push("/usr/bin/clangd");
+    nsJailArgs.push("--compile-commands-dir=/workspace");
+    nsJailArgs.push("--header-insertion=never");
+
+    // if we make it here, and have errors, quit
+    if(errors.length > 0)
+    {
+        console.error(errors);
+        return;
+    }
+    
+    // if workspace doesn't exist, let's create it
+    if(!existsSync(path.join(workspacePath, "compile_commands.json")))
+    {
+        if(!existsSync(path.join(process.cwd(), "workspaces")))
+            mkdirSync(path.join(process.cwd(), "workspaces"));
+
+        if(!existsSync(workspacePath))
+            mkdirSync(workspacePath);
+        
+        let compileCommandsTemplate: string = readFileSync(path.join(process.cwd(), "compile_commands.template"), "utf-8");
+        writeFileSync(path.join(workspacePath, "compile_commands.json"), compileCommandsTemplate);
+    }
+
+    log(libraryDirectories);
+    log(libraries);
+    log(workspacePath, existsSync(workspacePath));
+    log(nsJailArgs);
+
     const reader = new WebSocketMessageReader(socket);
     const writer = new WebSocketMessageWriter(socket);
     
     // start the language server as an external process
     const socketConnection = createConnection(reader, writer, () => socket.dispose());
-    const serverConnection = createServerProcess(serverName, runCommand, runCommandArgs, spawnOptions);
+    const serverConnection = createServerProcess(serverName, "nsjail", nsJailArgs, spawnOptions);
 
     if (serverConnection)
     {
@@ -182,100 +252,75 @@ const upgradeWsServer = (runconfig: LanguageServerRunConfig,
         const baseURL = `http://${request.headers.host}/`;
         const pathName = request.url ? new URL(request.url, baseURL).pathname : undefined;
 
-        if (pathName === runconfig.pathName)
+        if(pathName !== runconfig.pathName)
+            return;
+
+        config.wss.handleUpgrade(request, socket, head, webSocket =>
         {
-            config.wss.handleUpgrade(request, socket, head, webSocket =>
+            let libraries = null;
+
+            try
             {
-                
-                let keepAliveInterval: NodeJS.Timeout;
-                
-                const socket: IWebSocket = {
-                    send: content => webSocket.send(content, error => {
-                        if (error) {
-                            throw error;
-                        }
-                    }),
-                    onMessage: cb => webSocket.on('message', (data) => {
-                        log(data.toString());
-                        cb(data);
-                    }),
-                    onError: cb => webSocket.on('error', cb),
-                    onClose: cb => webSocket.on('close', cb),
-                    dispose: () =>
-                    {
-                        clearInterval(keepAliveInterval);
-                        webSocket.close();
+                let cookies = cookie.parse(request.headers["cookie"] as string);
+                libraries = JSON.parse(decodeURIComponent(cookies.pgetinker_libraries));
+            }
+            catch(e)
+            {
+
+            }
+            
+            let keepAliveInterval: NodeJS.Timeout;
+            
+            const socket: IWebSocket = {
+                send: content => webSocket.send(content, error => {
+                    if (error) {
+                        throw error;
                     }
-                };
-
-                // launch the server when the web socket is opened
-                if (webSocket.readyState === webSocket.OPEN)
+                }),
+                onMessage: cb => webSocket.on('message', (data) => {
+                    log(data.toString());
+                    cb(data);
+                }),
+                onError: cb => webSocket.on('error', cb),
+                onClose: cb => webSocket.on('close', cb),
+                dispose: () =>
                 {
-                    launchLanguageServer(runconfig, socket);
+                    clearInterval(keepAliveInterval);
+                    webSocket.close();
                 }
-                else
-                {
-                    webSocket.on('open', () =>
-                    {
-                        launchLanguageServer(runconfig, socket);
-                    });
-                }
+            };
 
-                keepAliveInterval = setInterval(() =>
+            // launch the server when the web socket is opened
+            if (webSocket.readyState === webSocket.OPEN)
+            {
+                launchLanguageServer(runconfig, socket, libraries);
+            }
+            else
+            {
+                webSocket.on('open', () =>
                 {
-                    webSocket.send(JSON.stringify({
-                        jsonrpc: "2.0",
-                        method: "telemetry/event", 
-                        params: {
-                            message: "Number Five Alive",
-                        },
-                    }));
-                }, 30000);
-            });
-        }
+                    launchLanguageServer(runconfig, socket, libraries);
+                });
+            }
+
+            keepAliveInterval = setInterval(() =>
+            {
+                webSocket.send(JSON.stringify({
+                    jsonrpc: "2.0",
+                    method: "telemetry/event", 
+                    params: {
+                        message: "Number Five Alive",
+                    },
+                }));
+            }, 30000);
+        });
     });
 };
-
-function authenticate(request: IncomingMessage): boolean
-{
-    // the basic idea here is if we have a valid session provided via cookie, then
-    // we're going to allow the connection to succeed.
-    try
-    {
-        let cookies = cookie.parse(request.headers["cookie"] as string);
-
-        let appKey  = Buffer.from(process.env.APP_KEY?.replace("base64:", "") as string, 'base64');
-        
-        let session = JSON.parse(Buffer.from(cookies.pgetinker_session, "base64").toString());
-        
-        const decipher = crypto.createDecipheriv(
-            "aes-256-cbc",
-            appKey,
-            Buffer.from(session.iv, 'base64')
-        );
-            
-        let plaintext = decipher.update(session.value, "base64", "utf8");
-        plaintext += decipher.final("utf8");
-        
-        return true;
-    }
-    catch(e)
-    {
-
-    }
-    
-    return false;
-
-}
 
 /** LSP server runner */
 const runLanguageServer = (
     languageServerRunConfig: LanguageServerRunConfig
 ) => {
-    
-    let compileCommandsTemplate: string = readFileSync(path.join(process.cwd(), "compile_commands.template"), "utf-8");
-    writeFileSync(path.join(process.cwd(), "compile_commands.json"), compileCommandsTemplate.replace("{{cwd}}", process.cwd()))
-    
     process.on('uncaughtException', (error) =>
     {
         console.error('Uncaught Exception: ', error.toString());
@@ -327,25 +372,38 @@ runLanguageServer({
     serverName: 'CLANGD',
     pathName: '/clangd',
     serverPort: 3000,
-    runCommand: "clangd",
-    runCommandArgs: [
-        `--compile-commands-dir=${process.cwd()}`,
-        `--header-insertion=never`,
-    ],
     wsServerOptions: {
         noServer: true,
         perMessageDeflate: false,
         clientTracking: true,
         verifyClient: (clientInfo: { origin: string; secure: boolean; req: IncomingMessage }, callback) => 
         {
-            if(authenticate(clientInfo.req))
+            try
             {
-                callback(true);
+                let cookies = cookie.parse(clientInfo.req.headers["cookie"] as string);
+                
+                let appKey  = Buffer.from(process.env.APP_KEY?.replace("base64:", "") as string, 'base64');
+        
+                let session = JSON.parse(Buffer.from(cookies.pgetinker_session, "base64").toString());
+                
+                // @ts-ignore
+                const decipher = crypto.createDecipheriv(
+                    "aes-256-cbc",
+                    appKey,
+                    Buffer.from(session.iv, 'base64')
+                );
+                    
+                let plaintext = decipher.update(session.value, "base64", "utf8");
+                plaintext += decipher.final("utf8");
             }
-            else
+            catch(e)
             {
                 callback(false);
+                return;
             }
+
+            callback(true);
+            return;
         }
     }
 });
